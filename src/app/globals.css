@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-outfit);
+  --font-display: var(--font-fraunces);
+  --color-paper: #f7f6f3;
+  --color-ink: #1c1916;
+  --color-navy: #1c1916;
+  --color-maroon: #0f4d38;
+  --color-leaf: #0f4d38;
+  --color-gold: #fecf45;
+  --color-brass: #fecf45;
+  --color-clay: #5c4308;
+  --color-card: #ffffff;
+  --color-line: #e6e1d6;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  background-image:
+    radial-gradient(circle at top right, rgb(254 207 69 / 0.22), transparent 32%);
+  min-height: 100%;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
