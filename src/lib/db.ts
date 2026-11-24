@@ -1,4 +1,6 @@
+import { unstable_rethrow } from "next/navigation";
 import { MongoClient, type Db } from "mongodb";
+import { verifySession } from "./auth";
 import type { DbFailure } from "./types";
 
 const DB_NAME = process.env.MONGODB_DB || "srimurugan";
@@ -18,6 +20,7 @@ function uri() {
 }
 
 export async function getDb(): Promise<Db> {
+  await verifySession();
   if (!globalForMongo._mongoClientPromise) {
     const client = new MongoClient(uri(), {
       maxPoolSize: 10,
@@ -101,6 +104,7 @@ export async function loadOrFail<T>(load: () => Promise<T>) {
     const data = await load();
     return { data, failure: null as DbFailure | null };
   } catch (error) {
+    unstable_rethrow(error);
     return { data: null as T | null, failure: dbFailure(error) };
   }
 }

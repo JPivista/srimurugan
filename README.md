@@ -17,6 +17,6 @@ npm install
 npm run dev
 ```
 
-Copy `.env.example` to `.env.local` and set `MONGODB_URI`. Open http://localhost:3000.
+Copy `.env.example` to `.env.local` and set `MONGODB_URI`. Also set `APP_USERNAME`, `APP_PASSWORD`, and `SESSION_SECRET`. The public site stays open. The office books at `/app` ask for that login. Open http://localhost:3000.
 
-On Vercel, add `MONGODB_URI` and `MONGODB_DB` in the project environment variables. Atlas must allow network access from `0.0.0.0/0` so the hosted app can reach the cluster. Collections and indexes are created on first use.
+On Vercel, add `MONGODB_URI`, `MONGODB_DB`, `APP_USERNAME`, `APP_PASSWORD`, and `SESSION_SECRET` in the project environment variables. Use the same `SESSION_SECRET` you use locally if you want existing sign-ins to keep working after deploy. Atlas must allow network access from `0.0.0.0/0` so the hosted app can reach the cluster. Collections and indexes are created on first use.

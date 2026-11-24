@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { logout } from "@/app/actions";
 import { DesktopNav, MobileNav } from "./Nav";
 import { RegisterApp } from "./RegisterApp";
 
@@ -18,7 +19,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
               className="h-12 w-12 rounded-md object-cover object-[center_24%] sm:h-14 sm:w-14 md:h-24 md:w-auto md:rounded-none md:object-contain md:object-center"
             />
           </Link>
-          <DesktopNav />
+          <div className="flex items-center gap-2">
+            <DesktopNav />
+            <form action={logout}>
+              <button
+                type="submit"
+                className="rounded-full px-3 py-1.5 text-sm font-semibold text-ink/70 hover:bg-gold/10"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
         </div>
       </header>
       <main className="mx-auto w-full max-w-3xl px-3 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-4 md:pb-12">
