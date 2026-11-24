@@ -137,6 +137,11 @@ export default function HomePage() {
       <footer className="border-t border-line px-4 py-6 text-center text-xs text-ink/55">
         <p>Sree Murugan Financials · Selakkarichal · Terms and conditions apply</p>
         <p className="mt-2">
+          <a href="/app/login" className="font-semibold text-maroon">
+            Staff sign in
+          </a>
+        </p>
+        <p className="mt-2">
           Developed by{" "}
           <a
             href="http://www.youngzen.in/"
