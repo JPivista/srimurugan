@@ -1,7 +1,7 @@
 import { DbConnect } from "@/components/DbConnect";
 import { EntryForm } from "@/components/EntryForm";
 import { loadOrFail } from "@/lib/db";
-import { blankEntry, customerNames, getDashboard, getEntry } from "@/lib/ledger";
+import { blankEntry, customerDues, customerNames, getDashboard, getEntry } from "@/lib/ledger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,12 +19,13 @@ export default async function EntryPage({
       customerNames(),
       getDashboard(),
       id && Number.isInteger(id) ? getEntry(id) : Promise.resolve(null),
+      customerDues(id && Number.isInteger(id) ? id : undefined),
     ]),
   );
   if (!result.data) {
     return <DbConnect failure={result.failure ?? { message: "The books could not be opened." }} />;
   }
-  const [names, book, existing] = result.data;
+  const [names, book, existing, dues] = result.data;
 
   return (
       <div>
@@ -40,6 +41,7 @@ export default async function EntryPage({
         <EntryForm
           initial={blankEntry(existing ?? undefined)}
           names={names}
+          dues={dues}
           bankBalance={book.bankBalance}
         />
       </div>

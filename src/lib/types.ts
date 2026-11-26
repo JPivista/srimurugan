@@ -34,6 +34,22 @@ export type Dashboard = {
   recent: Entry[];
 };
 
+export type OpenLoan = {
+  principal: number;
+  original: number;
+  giveDate: string;
+  returnDate: string | null;
+  perLakh: number | null;
+  planned: number;
+};
+
+export type CustomerDue = {
+  name: string;
+  principal: number;
+  expected: number;
+  loans: OpenLoan[];
+};
+
 export type CustomerRollup = {
   name: string;
   accountNumber: string | null;

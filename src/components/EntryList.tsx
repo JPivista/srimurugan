@@ -4,15 +4,15 @@ import { formatDate, formatINR } from "@/lib/format";
 import type { Entry } from "@/lib/types";
 
 const kindLabel = {
-  give: "Give",
+  give: "Given",
   receive: "Receive",
   expense: "Expense",
 } as const;
 
 const kindClass = {
-  give: "bg-maroon/10 text-maroon",
+  give: "bg-maroon/25 text-maroon",
   receive: "bg-gold text-ink",
-  expense: "bg-gold text-ink",
+  expense: "bg-red-800 text-white",
 } as const;
 
 const modeLabel = {
@@ -45,7 +45,7 @@ export function EntryList({
           entry.accountNumber ? `A/c ${entry.accountNumber}` : "",
           entry.mobile || "",
           entry.paymentMode
-            ? `Received through ${modeLabel[entry.paymentMode]}`
+            ? `${entry.kind === "give" ? "Given through" : "Received through"} ${modeLabel[entry.paymentMode]}`
             : "",
         ]
           .filter(Boolean)

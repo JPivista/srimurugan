@@ -7,6 +7,7 @@ const links = [
   { href: "/app", label: "Home" },
   { href: "/app/entry", label: "Entry" },
   { href: "/app/ledger", label: "Ledger" },
+  { href: "/app/records", label: "Records" },
   { href: "/app/customers", label: "People" },
   { href: "/app/settings", label: "Bank" },
 ];
@@ -47,7 +48,7 @@ export function MobileNav() {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       aria-label="Main"
     >
-      <ul className="grid grid-cols-5">
+      <ul className="grid grid-cols-6">
         {links.map((link) => {
           const on = active(pathname, link.href);
           return (
