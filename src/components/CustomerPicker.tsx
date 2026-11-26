@@ -21,6 +21,7 @@ export function CustomerPicker({
   names,
   defaultValue,
   required = false,
+  onValueChange,
 }: {
   id: string;
   name: string;
@@ -28,6 +29,7 @@ export function CustomerPicker({
   names: string[];
   defaultValue: string;
   required?: boolean;
+  onValueChange?: (value: string) => void;
 }) {
   const [value, setValue] = useState(defaultValue);
   const [open, setOpen] = useState(false);
@@ -58,6 +60,7 @@ export function CustomerPicker({
         onFocus={() => setOpen(true)}
         onChange={(event) => {
           setValue(event.target.value);
+          onValueChange?.(event.target.value);
           setOpen(true);
         }}
         onBlur={() => {
@@ -79,6 +82,7 @@ export function CustomerPicker({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   setValue(item);
+                  onValueChange?.(item);
                   setOpen(false);
                 }}
               >

@@ -106,9 +106,10 @@ export default async function HomePage() {
         <section>
           <div className="mb-3 flex items-baseline justify-between">
             <h2 className="font-display text-xl">Recent</h2>
-            <Link href="/app/ledger" className="text-sm text-ink">
-              Full ledger
-            </Link>
+            <span className="flex gap-3 text-sm text-ink">
+              <Link href="/app/ledger">Full ledger</Link>
+              <Link href="/app/records">Records</Link>
+            </span>
           </div>
           <EntryList entries={book.recent} empty="No records yet." />
         </section>

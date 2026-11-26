@@ -3,11 +3,15 @@ import { ensureSchema, getDb } from "./db";
 import {
   commissionFor,
   commissionFromReturn,
+  commissionOnReceipt,
   parseMoney,
   parseRate,
+  rateForReceipt,
+  roundMoney,
   todayISO,
 } from "./format";
 import type {
+  CustomerDue,
   CustomerRollup,
   Dashboard,
   Entry,
@@ -115,6 +119,64 @@ export async function getEntry(id: number) {
   return row ? mapEntry(row) : null;
 }
 
+export async function customerDues(excludeId?: number): Promise<CustomerDue[]> {
+  const rows = await (await entries())
+    .find({
+      kind: { $in: ["give", "receive"] },
+      customerName: { $nin: [null, ""] },
+    })
+    .sort({ txnDate: 1, _id: 1 })
+    .toArray();
+  const map = new Map<string, CustomerDue>();
+  for (const row of rows) {
+    if (excludeId && row._id === excludeId) continue;
+    const entry = mapEntry(row);
+    const key = (entry.customerName || "").toLowerCase();
+    if (!key) continue;
+    const current = map.get(key) ?? {
+      name: entry.customerName || "",
+      principal: 0,
+      expected: 0,
+      loans: [],
+    };
+    current.name = entry.customerName || current.name;
+    if (entry.kind === "give") {
+      const planned =
+        entry.returnAmount != null && entry.returnAmount > 0
+          ? entry.returnAmount
+          : entry.amount + entry.commissionAmount;
+      current.principal += entry.amount;
+      current.expected += planned;
+      current.loans.push({
+        principal: entry.amount,
+        original: entry.amount,
+        giveDate: entry.txnDate,
+        returnDate: entry.returnDate,
+        perLakh: entry.commissionPerLakh,
+        planned,
+      });
+    }
+    if (entry.kind === "receive") {
+      const principalBack = Math.min(
+        entry.amount,
+        Math.max(0, entry.amount - entry.commissionAmount),
+      );
+      let left = principalBack;
+      for (const loan of current.loans) {
+        if (left <= 0) break;
+        const take = Math.min(loan.principal, left);
+        loan.principal = roundMoney(loan.principal - take);
+        left = roundMoney(left - take);
+      }
+      current.loans = current.loans.filter((loan) => loan.principal > 0);
+      current.principal = Math.max(0, current.principal - principalBack);
+      current.expected = Math.max(0, current.expected - entry.amount);
+    }
+    map.set(key, current);
+  }
+  return [...map.values()].filter((item) => item.principal > 0 || item.expected > 0);
+}
+
 export async function customerNames() {
   const names = await (await entries()).distinct("customerName", {
     customerName: { $nin: [null, ""] },
@@ -210,7 +272,7 @@ export async function getDashboard(): Promise<Dashboard> {
     expenses: totals.expenses,
     profit: totals.profit,
     bankBalance: openingBalance - totals.given + totals.received - totals.expenses,
-    withCustomers: totals.given - totals.received,
+    withCustomers: totals.given - totals.received + totals.profit,
     todayGiven: todayTotals.given,
     todayReceived: todayTotals.received,
     todayExpenses: todayTotals.expenses,
@@ -249,7 +311,10 @@ export async function customerRollups() {
       current.received += entry.amount;
       current.commissionEarned += entry.commissionAmount;
     }
-    current.outstanding = current.given - current.received;
+    current.outstanding = Math.max(
+      0,
+      current.given - current.received + current.commissionEarned,
+    );
     map.set(key, current);
   }
   return [...map.values()].sort(
@@ -322,19 +387,14 @@ export function draftFromForm(formData: FormData): Draft {
   const paymentMode: PaymentMode =
     modeRaw === "bank" || modeRaw === "upi" || modeRaw === "cash" ? modeRaw : "bank";
   const planned = optionalReturn(formData, kindRaw);
-  const receivedFrom =
-    kindRaw === "receive"
-      ? cleanText(String(formData.get("receivedFrom") || ""), 120) || null
-      : null;
-
   return {
     id,
     kind: kindRaw,
     customerName,
-    accountNumber: cleanText(String(formData.get("accountNumber") || ""), 40),
-    mobile: cleanText(String(formData.get("mobile") || ""), 20),
+    accountNumber: "",
+    mobile: "",
     amount,
-    commissionPerLakh: kindRaw === "give" && planned.returnAmount != null ? null : rate,
+    commissionPerLakh: rate,
     commissionAmount:
       kindRaw === "give" && planned.returnAmount != null
         ? Math.max(0, commissionFromReturn(amount, planned.returnAmount))
@@ -347,7 +407,7 @@ export function draftFromForm(formData: FormData): Draft {
     txnDate,
     returnDate: planned.returnDate,
     returnAmount: planned.returnAmount,
-    receivedFrom,
+    receivedFrom: null,
   };
 }
 
@@ -385,6 +445,16 @@ function entryFields(draft: Draft): Omit<EntryDoc, "_id"> {
 }
 
 export async function saveEntry(draft: Draft) {
+  if (draft.kind === "receive") {
+    const dues = await customerDues(draft.id);
+    const due = dues.find(
+      (item) => item.name.toLowerCase() === draft.customerName.toLowerCase(),
+    );
+    const principal = due?.principal ?? 0;
+    draft.commissionAmount = commissionOnReceipt(draft.amount, principal);
+    draft.commissionPerLakh = rateForReceipt(draft.amount, principal);
+    draft.receivedFrom = null;
+  }
   const col = await entries();
   if (draft.id) {
     const result = await col.updateOne(
@@ -412,7 +482,7 @@ export function blankEntry(partial?: Partial<Entry>) {
     mobile: partial?.mobile ?? "",
     amount: partial?.amount ? String(partial.amount) : "",
     commissionPerLakh:
-      partial?.commissionPerLakh != null ? String(partial.commissionPerLakh) : "250",
+      partial?.commissionPerLakh != null ? String(partial.commissionPerLakh) : "300",
     paymentMode: partial?.paymentMode ?? "bank",
     reason: partial?.reason ?? "",
     notes: partial?.notes ?? "",

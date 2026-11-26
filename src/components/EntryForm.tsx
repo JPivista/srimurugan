@@ -1,11 +1,23 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { saveTransaction } from "@/app/actions";
 import { CustomerPicker } from "@/components/CustomerPicker";
-import { commissionFor, commissionFromReturn, formatINR, parseMoney, parseRate } from "@/lib/format";
-import type { EntryInput, Kind } from "@/lib/types";
+import {
+  commissionFor,
+  commissionFromReturn,
+  commissionOnReceipt,
+  daysCharged,
+  expectedReceipt,
+  formatINR,
+  plannedReceipt,
+  parseMoney,
+  parseRate,
+  rateForReceipt,
+  suggestedReturn,
+} from "@/lib/format";
+import type { CustomerDue, EntryInput, Kind } from "@/lib/types";
 
 const kinds: { id: Kind; label: string; hint: string }[] = [
   {
@@ -40,17 +52,24 @@ function RequiredMark() {
 export function EntryForm({
   initial,
   names,
+  dues,
   bankBalance,
 }: {
   initial: EntryInput;
   names: string[];
+  dues: CustomerDue[];
   bankBalance: number;
 }) {
   const [state, action, pending] = useActionState(saveTransaction, {});
   const [kind, setKind] = useState<Kind>(initial.kind);
+  const [customerName, setCustomerName] = useState(initial.customerName);
   const [amount, setAmount] = useState(initial.amount);
+  const [txnDate, setTxnDate] = useState(initial.txnDate);
+  const [returnDate, setReturnDate] = useState(initial.returnDate);
   const [returnAmount, setReturnAmount] = useState(initial.returnAmount);
-  const [rate, setRate] = useState(initial.commissionPerLakh || "250");
+  const [rate, setRate] = useState(initial.commissionPerLakh || "300");
+  const returnTouched = useRef(Boolean(initial.returnAmount));
+  const receiveAmountTouched = useRef(initial.kind === "receive" && Boolean(initial.amount));
   const selected = kinds.find((item) => item.id === kind) ?? kinds[0];
 
   const preview = useMemo(() => {
@@ -70,15 +89,94 @@ export function EntryForm({
         return bankLine;
       }
     }
+    if (kind === "receive") {
+      const due = dueFor(customerName);
+      const commission = commissionOnReceipt(rupees, due?.principal ?? 0);
+      return `${bankLine} Profit increases by ${formatINR(commission)}.`;
+    }
     if (rate.trim() === "") return bankLine;
     const perLakh = parseRate(rate);
     if (perLakh == null) return bankLine;
     const commission = commissionFor(rupees, perLakh);
-    if (kind === "give") {
-      return `${bankLine} Commission ${formatINR(commission)} is saved for when this money comes back.`;
+    return `${bankLine} Commission ${formatINR(commission)} is saved for when this money comes back.`;
+  }, [amount, customerName, dues, kind, rate, returnAmount]);
+
+  function dueFor(name: string) {
+    const key = name.trim().toLowerCase();
+    return dues.find((item) => item.name.toLowerCase() === key) ?? null;
+  }
+
+  function expectedFor(name: string, receiveDate: string) {
+    const due = dueFor(name);
+    if (!due || due.principal <= 0) return null;
+    return expectedReceipt(due.loans, receiveDate) ?? (due.expected > 0 ? due.expected : null);
+  }
+
+  function applyReceipt(
+    name: string,
+    collectedRaw: string,
+    manual: boolean,
+    receiveDate = txnDate,
+    useGiven = false,
+  ) {
+    const due = dueFor(name);
+    if (!due || due.principal <= 0) {
+      if (!manual) {
+        setAmount("");
+        setRate("300");
+      }
+      return;
     }
-    return `${bankLine} Profit increases by ${formatINR(commission)}.`;
-  }, [amount, kind, rate, returnAmount]);
+    const givenDate = due.loans
+      .filter((loan) => loan.principal > 0 && loan.returnDate)
+      .map((loan) => loan.returnDate as string)
+      .sort()
+      .at(-1);
+    const date = useGiven && givenDate ? givenDate : receiveDate;
+    if (useGiven && givenDate) setTxnDate(givenDate);
+    const expected = useGiven
+      ? (plannedReceipt(due.loans) ?? expectedFor(name, date))
+      : expectedFor(name, date);
+    const collected = manual ? parseMoney(collectedRaw) : expected;
+    if (!manual && expected != null) setAmount(String(expected));
+    if (collected == null) return;
+    setRate(String(rateForReceipt(collected, due.principal)));
+  }
+
+  useEffect(() => {
+    if (kind !== "give" || returnTouched.current) return;
+    const rupees = parseMoney(amount);
+    const perLakh = parseRate(rate);
+    if (rupees == null || perLakh == null || !txnDate || !returnDate) {
+      setReturnAmount("");
+      return;
+    }
+    const suggested = suggestedReturn(rupees, perLakh, txnDate, returnDate);
+    setReturnAmount(suggested == null ? "" : String(suggested));
+  }, [amount, kind, rate, returnDate, txnDate]);
+
+  function editSource(update: () => void) {
+    returnTouched.current = false;
+    update();
+  }
+
+  const chargedDays =
+    kind === "give" ? daysCharged(txnDate, returnDate) : null;
+
+  const commissionField = (
+    <label className="block text-sm font-medium" htmlFor="commissionPerLakh">
+      Commission per lakh
+      <input
+        id="commissionPerLakh"
+        name="commissionPerLakh"
+        inputMode="decimal"
+        value={rate}
+        readOnly={kind === "receive"}
+        onChange={(event) => editSource(() => setRate(event.target.value))}
+        className={field}
+      />
+    </label>
+  );
 
   const rupees = parseMoney(amount);
   const overdrawn =
@@ -109,7 +207,13 @@ export function EntryForm({
                 type="button"
                 role="radio"
                 aria-checked={on}
-                onClick={() => setKind(item.id)}
+                onClick={() => {
+                  setKind(item.id);
+                  if (item.id === "receive") {
+                    receiveAmountTouched.current = false;
+                    applyReceipt(customerName, amount, false, txnDate, true);
+                  }
+                }}
                 className={`min-h-12 rounded-xl border px-1 text-xs font-semibold sm:text-sm ${
                   on
                     ? "border-gold bg-gold text-ink"
@@ -146,16 +250,13 @@ export function EntryForm({
             required
             names={names}
             defaultValue={initial.customerName}
+            onValueChange={(value) => {
+              setCustomerName(value);
+              if (kind !== "receive") return;
+              receiveAmountTouched.current = false;
+              applyReceipt(value, amount, false, txnDate, true);
+            }}
           />
-          {kind === "receive" ? (
-            <CustomerPicker
-              id="receivedFrom"
-              name="receivedFrom"
-              label="Received from"
-              names={names}
-              defaultValue={initial.receivedFrom}
-            />
-          ) : null}
         </>
       )}
 
@@ -168,10 +269,24 @@ export function EntryForm({
           required
           inputMode="decimal"
           value={amount}
-          onChange={(event) => setAmount(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (kind === "receive") {
+              receiveAmountTouched.current = true;
+              setAmount(next);
+              applyReceipt(customerName, next, true);
+              return;
+            }
+            editSource(() => setAmount(next));
+          }}
           className={field}
         />
       </label>
+      {kind === "receive" && expectedFor(customerName, txnDate) != null ? (
+        <p className="-mt-3 text-xs leading-5 text-ink/55">
+          Expected {formatINR(expectedFor(customerName, txnDate) ?? 0)} for this date. You can change the amount. Commission follows what you collect.
+        </p>
+      ) : null}
 
       <label className="block text-sm font-medium" htmlFor="txnDate">
         Date
@@ -181,7 +296,17 @@ export function EntryForm({
           name="txnDate"
           type="date"
           required
-          defaultValue={initial.txnDate}
+          value={txnDate}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (kind === "receive") {
+              receiveAmountTouched.current = false;
+              setTxnDate(next);
+              applyReceipt(customerName, amount, false, next);
+              return;
+            }
+            editSource(() => setTxnDate(next));
+          }}
           className={field}
         />
       </label>
@@ -194,10 +319,12 @@ export function EntryForm({
               id="returnDate"
               name="returnDate"
               type="date"
-              defaultValue={initial.returnDate}
+              value={returnDate}
+              onChange={(event) => editSource(() => setReturnDate(event.target.value))}
               className={field}
             />
           </label>
+          {commissionField}
           <label className="block text-sm font-medium" htmlFor="returnAmount">
             Return amount
             <input
@@ -205,28 +332,26 @@ export function EntryForm({
               name="returnAmount"
               inputMode="decimal"
               value={returnAmount}
-              onChange={(event) => setReturnAmount(event.target.value)}
+              onChange={(event) => {
+                returnTouched.current = true;
+                setReturnAmount(event.target.value);
+              }}
               className={field}
             />
           </label>
+          {chargedDays != null && returnAmount ? (
+            <p className="-mt-3 text-xs leading-5 text-ink/55">
+              {chargedDays} day{chargedDays === 1 ? "" : "s"} at this commission. You can change the return amount.
+            </p>
+          ) : null}
         </>
       ) : null}
 
       {kind !== "expense" ? (
         <>
-          <label className="block text-sm font-medium" htmlFor="commissionPerLakh">
-            Commission per lakh
-            <input
-              id="commissionPerLakh"
-              name="commissionPerLakh"
-              inputMode="decimal"
-              value={rate}
-              onChange={(event) => setRate(event.target.value)}
-              className={field}
-            />
-          </label>
+          {kind === "receive" ? commissionField : null}
           <label className="block text-sm font-medium" htmlFor="paymentMode">
-            Received through
+            {kind === "give" ? "Given through" : "Received through"}
             <select
               id="paymentMode"
               name="paymentMode"
@@ -237,27 +362,6 @@ export function EntryForm({
               <option value="cash">Cash</option>
               <option value="upi">UPI</option>
             </select>
-          </label>
-          <label className="block text-sm font-medium" htmlFor="accountNumber">
-            Account number
-            <input
-              id="accountNumber"
-              name="accountNumber"
-              defaultValue={initial.accountNumber}
-              inputMode="numeric"
-              className={field}
-            />
-          </label>
-          <label className="block text-sm font-medium" htmlFor="mobile">
-            Mobile
-            <input
-              id="mobile"
-              name="mobile"
-              defaultValue={initial.mobile}
-              inputMode="tel"
-              autoComplete="tel"
-              className={field}
-            />
           </label>
           <label className="block text-sm font-medium" htmlFor="notes">
             Notes
