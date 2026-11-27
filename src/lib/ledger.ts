@@ -40,9 +40,14 @@ type EntryDoc = {
 type Totals = {
   given: number;
   received: number;
+  cashGiven: number;
+  cashReceived: number;
   expenses: number;
   profit: number;
 };
+
+const bankMode = { $ne: ["$paymentMode", "cash"] };
+const cashMode = { $eq: ["$paymentMode", "cash"] };
 
 function mapEntry(doc: EntryDoc): Entry {
   return {
@@ -87,29 +92,49 @@ async function nextEntryId() {
   return seq;
 }
 
-export async function getOpeningBalance() {
-  await ensureSchema();
-  const db = await getDb();
-  const row = await db
-    .collection<{ _id: string; openingBalance: number }>("settings")
-    .findOne({ _id: "opening" });
-  return Number(row?.openingBalance ?? 0);
-}
+const DEFAULT_CASH = 27500;
 
-export async function saveOpeningBalance(raw: string) {
+function readRupees(raw: string, label: string) {
   const cleaned = raw.replace(/[₹,\s]/g, "");
   if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) {
-    throw new Error("Enter the opening balance in rupees.");
+    throw new Error(`Enter the ${label} in rupees.`);
   }
   const amount = Number(cleaned);
   if (amount > 999999999999) {
-    throw new Error("That opening balance is too large.");
+    throw new Error(`That ${label} is too large.`);
   }
+  return amount;
+}
+
+export async function getOpeningBalances() {
   await ensureSchema();
   const db = await getDb();
-  await db.collection<{ _id: string; openingBalance: number; updatedAt: Date }>("settings").updateOne(
+  const settings = db.collection<{ _id: string; openingBalance: number; openingCash?: number }>(
+    "settings",
+  );
+  const row = await settings.findOne({ _id: "opening" });
+  const openingBalance = Number(row?.openingBalance ?? 0);
+  if (row?.openingCash == null) {
+    await settings.updateOne(
+      { _id: "opening" },
+      { $set: { openingCash: DEFAULT_CASH, updatedAt: new Date() } },
+      { upsert: true },
+    );
+  }
+  return {
+    openingBalance,
+    openingCash: row?.openingCash == null ? DEFAULT_CASH : Number(row.openingCash),
+  };
+}
+
+export async function saveOpeningBalances(bankRaw: string, cashRaw: string) {
+  const openingBalance = readRupees(bankRaw, "opening bank balance");
+  const openingCash = readRupees(cashRaw, "opening cash");
+  await ensureSchema();
+  const db = await getDb();
+  await db.collection("settings").updateOne(
     { _id: "opening" },
-    { $set: { openingBalance: amount, updatedAt: new Date() } },
+    { $set: { openingBalance, openingCash, updatedAt: new Date() } },
     { upsert: true },
   );
 }
@@ -148,6 +173,7 @@ export async function customerDues(excludeId?: number): Promise<CustomerDue[]> {
       current.principal += entry.amount;
       current.expected += planned;
       current.loans.push({
+        id: entry.id,
         principal: entry.amount,
         original: entry.amount,
         giveDate: entry.txnDate,
@@ -175,6 +201,13 @@ export async function customerDues(excludeId?: number): Promise<CustomerDue[]> {
     map.set(key, current);
   }
   return [...map.values()].filter((item) => item.principal > 0 || item.expected > 0);
+}
+
+export async function pendingGiveIds() {
+  const dues = await customerDues();
+  return dues.flatMap((due) =>
+    due.loans.filter((loan) => loan.principal > 0).map((loan) => loan.id),
+  );
 }
 
 export async function customerNames() {
@@ -238,8 +271,26 @@ async function sumTotals(match: Filter<EntryDoc> = {}): Promise<Totals> {
       {
         $group: {
           _id: null,
-          given: { $sum: { $cond: [{ $eq: ["$kind", "give"] }, "$amount", 0] } },
-          received: { $sum: { $cond: [{ $eq: ["$kind", "receive"] }, "$amount", 0] } },
+          given: {
+            $sum: {
+              $cond: [{ $and: [{ $eq: ["$kind", "give"] }, bankMode] }, "$amount", 0],
+            },
+          },
+          received: {
+            $sum: {
+              $cond: [{ $and: [{ $eq: ["$kind", "receive"] }, bankMode] }, "$amount", 0],
+            },
+          },
+          cashGiven: {
+            $sum: {
+              $cond: [{ $and: [{ $eq: ["$kind", "give"] }, cashMode] }, "$amount", 0],
+            },
+          },
+          cashReceived: {
+            $sum: {
+              $cond: [{ $and: [{ $eq: ["$kind", "receive"] }, cashMode] }, "$amount", 0],
+            },
+          },
           expenses: { $sum: { $cond: [{ $eq: ["$kind", "expense"] }, "$amount", 0] } },
           profit: {
             $sum: { $cond: [{ $eq: ["$kind", "receive"] }, "$commissionAmount", 0] },
@@ -251,6 +302,8 @@ async function sumTotals(match: Filter<EntryDoc> = {}): Promise<Totals> {
   return {
     given: Number(row?.given ?? 0),
     received: Number(row?.received ?? 0),
+    cashGiven: Number(row?.cashGiven ?? 0),
+    cashReceived: Number(row?.cashReceived ?? 0),
     expenses: Number(row?.expenses ?? 0),
     profit: Number(row?.profit ?? 0),
   };
@@ -258,23 +311,31 @@ async function sumTotals(match: Filter<EntryDoc> = {}): Promise<Totals> {
 
 export async function getDashboard(): Promise<Dashboard> {
   const today = todayISO();
-  const [openingBalance, totals, todayTotals, recent] = await Promise.all([
-    getOpeningBalance(),
+  const [openings, totals, todayTotals, recent] = await Promise.all([
+    getOpeningBalances(),
     sumTotals(),
     sumTotals({ txnDate: today }),
     listEntries({ limit: 6 }),
   ]);
 
   return {
-    openingBalance,
+    openingBalance: openings.openingBalance,
     given: totals.given,
     received: totals.received,
     expenses: totals.expenses,
     profit: totals.profit,
-    bankBalance: openingBalance - totals.given + totals.received - totals.expenses,
-    withCustomers: totals.given - totals.received + totals.profit,
-    todayGiven: todayTotals.given,
-    todayReceived: todayTotals.received,
+    bankBalance: openings.openingBalance - totals.given + totals.received - totals.expenses,
+    openingCash: openings.openingCash,
+    cashGiven: totals.cashGiven,
+    cashReceived: totals.cashReceived,
+    cashInHand: openings.openingCash - totals.cashGiven + totals.cashReceived,
+    withCustomers:
+      totals.given +
+      totals.cashGiven -
+      (totals.received + totals.cashReceived) +
+      totals.profit,
+    todayGiven: todayTotals.given + todayTotals.cashGiven,
+    todayReceived: todayTotals.received + todayTotals.cashReceived,
     todayExpenses: todayTotals.expenses,
     todayProfit: todayTotals.profit,
     recent,

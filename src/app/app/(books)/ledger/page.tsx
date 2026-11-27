@@ -1,7 +1,7 @@
 import { DbConnect } from "@/components/DbConnect";
 import { EntryList } from "@/components/EntryList";
 import { loadOrFail } from "@/lib/db";
-import { listEntries } from "@/lib/ledger";
+import { listEntries, pendingGiveIds } from "@/lib/ledger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,11 +12,11 @@ export default async function LedgerPage({
   searchParams: Promise<{ kind?: string; q?: string; from?: string; to?: string }>;
 }) {
   const filters = await searchParams;
-  const result = await loadOrFail(() => listEntries(filters));
+  const result = await loadOrFail(() => Promise.all([listEntries(filters), pendingGiveIds()]));
   if (!result.data) {
     return <DbConnect failure={result.failure ?? { message: "The books could not be opened." }} />;
   }
-  const entries = result.data;
+  const [entries, pendingIds] = result.data;
   return (
       <div>
         <h1 className="font-display text-3xl">Ledger</h1>
@@ -64,6 +64,7 @@ export default async function LedgerPage({
           <EntryList
             entries={entries}
             empty="Nothing matches this filter."
+            pendingIds={pendingIds}
           />
         </div>
       </div>

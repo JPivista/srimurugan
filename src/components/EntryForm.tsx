@@ -15,6 +15,7 @@ import {
   parseMoney,
   parseRate,
   rateForReceipt,
+  roundMoney,
   suggestedReturn,
 } from "@/lib/format";
 import type { CustomerDue, EntryInput, Kind } from "@/lib/types";
@@ -23,12 +24,12 @@ const kinds: { id: Kind; label: string; hint: string }[] = [
   {
     id: "give",
     label: "Give",
-    hint: "Entry. The amount leaves the bank. Commission is stored and added to profit only when you receive the money.",
+    hint: "Entry. Bank or UPI leaves the bank. Cash leaves the cash in hand. Commission is counted when the money comes back.",
   },
   {
     id: "receive",
     label: "Receive",
-    hint: "Entry. The amount returns to the bank, and the commission is added to profit.",
+    hint: "Entry. Bank or UPI returns to the bank. Cash returns to the cash in hand, and the commission is added to profit.",
   },
   {
     id: "expense",
@@ -54,11 +55,13 @@ export function EntryForm({
   names,
   dues,
   bankBalance,
+  cashInHand,
 }: {
   initial: EntryInput;
   names: string[];
   dues: CustomerDue[];
   bankBalance: number;
+  cashInHand: number;
 }) {
   const [state, action, pending] = useActionState(saveTransaction, {});
   const [kind, setKind] = useState<Kind>(initial.kind);
@@ -68,6 +71,7 @@ export function EntryForm({
   const [returnDate, setReturnDate] = useState(initial.returnDate);
   const [returnAmount, setReturnAmount] = useState(initial.returnAmount);
   const [rate, setRate] = useState(initial.commissionPerLakh || "300");
+  const [paymentMode, setPaymentMode] = useState(initial.paymentMode);
   const returnTouched = useRef(Boolean(initial.returnAmount));
   const receiveAmountTouched = useRef(initial.kind === "receive" && Boolean(initial.amount));
   const selected = kinds.find((item) => item.id === kind) ?? kinds[0];
@@ -76,10 +80,11 @@ export function EntryForm({
     const rupees = parseMoney(amount);
     if (rupees == null) return "";
     if (kind === "expense") return `Bank reduces by ${formatINR(rupees)}.`;
+    const purse = paymentMode === "cash" ? "Cash" : "Bank";
     const bankLine =
       kind === "give"
-        ? `Bank reduces by ${formatINR(rupees)}.`
-        : `Bank increases by ${formatINR(rupees)}.`;
+        ? `${purse} reduces by ${formatINR(rupees)}.`
+        : `${purse} increases by ${formatINR(rupees)}.`;
     if (kind === "give") {
       const returned = parseMoney(returnAmount);
       if (returned != null) {
@@ -99,7 +104,7 @@ export function EntryForm({
     if (perLakh == null) return bankLine;
     const commission = commissionFor(rupees, perLakh);
     return `${bankLine} Commission ${formatINR(commission)} is saved for when this money comes back.`;
-  }, [amount, customerName, dues, kind, rate, returnAmount]);
+  }, [amount, customerName, dues, kind, paymentMode, rate, returnAmount]);
 
   function dueFor(name: string) {
     const key = name.trim().toLowerCase();
@@ -143,6 +148,15 @@ export function EntryForm({
     setRate(String(rateForReceipt(collected, due.principal)));
   }
 
+  function editCommission(next: string) {
+    setRate(next);
+    if (kind !== "receive") return;
+    const due = dueFor(customerName);
+    const perLakh = parseRate(next);
+    if (!due || due.principal <= 0 || perLakh == null) return;
+    setAmount(String(roundMoney(due.principal + commissionFor(due.principal, perLakh))));
+  }
+
   useEffect(() => {
     if (kind !== "give" || returnTouched.current) return;
     const rupees = parseMoney(amount);
@@ -169,20 +183,26 @@ export function EntryForm({
       <input
         id="commissionPerLakh"
         name="commissionPerLakh"
+        type="text"
         inputMode="decimal"
         value={rate}
-        readOnly={kind === "receive"}
-        onChange={(event) => editSource(() => setRate(event.target.value))}
+        onChange={(event) => {
+          const next = event.target.value;
+          if (kind === "receive") {
+            editCommission(next);
+            return;
+          }
+          editSource(() => setRate(next));
+        }}
         className={field}
       />
     </label>
   );
 
   const rupees = parseMoney(amount);
+  const available = kind === "give" && paymentMode === "cash" ? cashInHand : bankBalance;
   const overdrawn =
-    (kind === "give" || kind === "expense") &&
-    rupees != null &&
-    rupees > bankBalance;
+    (kind === "give" || kind === "expense") && rupees != null && rupees > available;
 
   return (
     <form action={action} className="space-y-5">
@@ -355,7 +375,10 @@ export function EntryForm({
             <select
               id="paymentMode"
               name="paymentMode"
-              defaultValue={initial.paymentMode}
+              value={paymentMode}
+              onChange={(event) =>
+                setPaymentMode(event.target.value === "cash" || event.target.value === "upi" ? event.target.value : "bank")
+              }
               className={field}
             >
               <option value="bank">Bank</option>
@@ -381,7 +404,7 @@ export function EntryForm({
       ) : null}
       {overdrawn ? (
         <p className="text-sm text-clay" role="status">
-          This is more than the current bank balance of {formatINR(bankBalance)}. You can still save it.
+          This is more than the current {kind === "give" && paymentMode === "cash" ? "cash in hand" : "bank balance"} of {formatINR(available)}. You can still save it.
         </p>
       ) : null}
       {state.error ? (

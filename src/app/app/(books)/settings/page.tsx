@@ -17,14 +17,15 @@ export default async function SettingsPage() {
       <div>
         <h1 className="font-display text-3xl">Bank</h1>
         <p className="mt-2 text-sm leading-6 text-ink/70">
-          Enter the cash already in the account before this ledger starts.
-          Giving money and expenses reduce the bank. Receiving the principal puts it back.
-          Commission stays in profit.
+          Enter the money already in the bank, and the cash already in hand, before this ledger starts.
+          A give or receive marked Cash changes cash in hand. Bank and UPI change the bank.
+          Expenses reduce the bank. Commission stays in profit.
         </p>
         <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm">
-          Current bank balance {formatINR(book.bankBalance)} from opening {formatINR(book.openingBalance)}.
+          Bank {formatINR(book.bankBalance)} from opening {formatINR(book.openingBalance)}. Cash in hand{" "}
+          {formatINR(book.cashInHand)} from opening {formatINR(book.openingCash)}.
         </p>
-        <SettingsForm openingBalance={book.openingBalance} />
+        <SettingsForm openingBalance={book.openingBalance} openingCash={book.openingCash} />
       </div>
   );
 }

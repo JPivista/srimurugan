@@ -3,17 +3,17 @@ import { DbConnect } from "@/components/DbConnect";
 import { EntryList } from "@/components/EntryList";
 import { loadOrFail } from "@/lib/db";
 import { formatINR } from "@/lib/format";
-import { getDashboard } from "@/lib/ledger";
+import { getDashboard, pendingGiveIds } from "@/lib/ledger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const result = await loadOrFail(getDashboard);
+  const result = await loadOrFail(() => Promise.all([getDashboard(), pendingGiveIds()]));
   if (!result.data) {
     return <DbConnect failure={result.failure ?? { message: "The books could not be opened." }} />;
   }
-  const book = result.data;
+  const [book, pendingIds] = result.data;
   const fresh = book.given === 0 && book.received === 0 && book.expenses === 0;
 
   return (
@@ -46,6 +46,29 @@ export default async function HomePage() {
             <div>
               <dt className="text-brass/90">Expenses</dt>
               <dd className="text-brass">{formatINR(book.expenses)}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="rounded-3xl border border-line bg-card px-4 py-5 shadow-sm sm:px-5 sm:py-6">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/50">
+            Cash in hand
+          </p>
+          <p className="mt-2 font-display text-[1.85rem] leading-none sm:text-5xl">
+            {formatINR(book.cashInHand)}
+          </p>
+          <dl className="mt-4 grid grid-cols-3 gap-2 text-xs text-ink/80 sm:text-sm">
+            <div>
+              <dt className="text-ink/45">Opening</dt>
+              <dd>{formatINR(book.openingCash)}</dd>
+            </div>
+            <div>
+              <dt className="text-ink/45">Given</dt>
+              <dd>{formatINR(book.cashGiven)}</dd>
+            </div>
+            <div>
+              <dt className="text-ink/45">Received</dt>
+              <dd>{formatINR(book.cashReceived)}</dd>
             </div>
           </dl>
         </section>
@@ -111,7 +134,7 @@ export default async function HomePage() {
               <Link href="/app/records">Records</Link>
             </span>
           </div>
-          <EntryList entries={book.recent} empty="No records yet." />
+          <EntryList entries={book.recent} empty="No records yet." pendingIds={pendingIds} />
         </section>
       </div>
   );
