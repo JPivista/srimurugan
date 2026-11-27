@@ -8,7 +8,7 @@ import {
   deleteEntry,
   draftFromForm,
   saveEntry,
-  saveOpeningBalance,
+  saveOpeningBalances,
 } from "@/lib/ledger";
 import { authConfigured, credentialsMatch, safeNext } from "@/lib/session";
 import type { ActionState } from "@/lib/types";
@@ -76,7 +76,10 @@ export async function saveBankBalance(
 ): Promise<ActionState> {
   await verifySession();
   try {
-    await saveOpeningBalance(String(formData.get("openingBalance") || ""));
+    await saveOpeningBalances(
+      String(formData.get("openingBalance") || ""),
+      String(formData.get("openingCash") || ""),
+    );
     refresh();
     return { ok: true };
   } catch (error) {

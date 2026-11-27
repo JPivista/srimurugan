@@ -43,6 +43,7 @@ export default async function EntryPage({
           names={names}
           dues={dues}
           bankBalance={book.bankBalance}
+          cashInHand={book.cashInHand}
         />
       </div>
   );

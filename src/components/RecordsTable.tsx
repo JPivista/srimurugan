@@ -3,13 +3,13 @@ import type { Entry } from "@/lib/types";
 
 const kindLabel = {
   give: "Given",
-  receive: "Receive",
+  receive: "Received",
   expense: "Expense",
 } as const;
 
 const kindClass = {
   give: "bg-maroon/25 text-maroon",
-  receive: "bg-gold text-ink",
+  receive: "bg-emerald-600 text-white",
   expense: "bg-red-800 text-white",
 } as const;
 

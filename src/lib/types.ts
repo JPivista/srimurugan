@@ -26,6 +26,10 @@ export type Dashboard = {
   expenses: number;
   profit: number;
   bankBalance: number;
+  openingCash: number;
+  cashGiven: number;
+  cashReceived: number;
+  cashInHand: number;
   withCustomers: number;
   todayGiven: number;
   todayReceived: number;
@@ -35,6 +39,7 @@ export type Dashboard = {
 };
 
 export type OpenLoan = {
+  id: number;
   principal: number;
   original: number;
   giveDate: string;

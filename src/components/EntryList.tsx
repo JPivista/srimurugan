@@ -5,13 +5,13 @@ import type { Entry } from "@/lib/types";
 
 const kindLabel = {
   give: "Given",
-  receive: "Receive",
+  receive: "Received",
   expense: "Expense",
 } as const;
 
 const kindClass = {
   give: "bg-maroon/25 text-maroon",
-  receive: "bg-gold text-ink",
+  receive: "bg-emerald-600 text-white",
   expense: "bg-red-800 text-white",
 } as const;
 
@@ -24,10 +24,13 @@ const modeLabel = {
 export function EntryList({
   entries,
   empty,
+  pendingIds = [],
 }: {
   entries: Entry[];
   empty: string;
+  pendingIds?: number[];
 }) {
+  const pending = new Set(pendingIds);
   if (entries.length === 0) {
     return (
       <p className="rounded-2xl border border-dashed border-line bg-card px-4 py-8 text-center text-sm text-ink/60">
@@ -61,8 +64,15 @@ export function EntryList({
                 ) : null}
                 {meta ? <p className="mt-1 text-xs text-ink/55">{meta}</p> : null}
               </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${kindClass[entry.kind]}`}>
-                {kindLabel[entry.kind]}
+              <span className="flex shrink-0 items-center gap-1">
+                {entry.kind === "give" && pending.has(entry.id) ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900">
+                    Pending
+                  </span>
+                ) : null}
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${kindClass[entry.kind]}`}>
+                  {kindLabel[entry.kind]}
+                </span>
               </span>
             </div>
             <p className="mt-3 font-display text-xl sm:text-2xl">{formatINR(entry.amount)}</p>
