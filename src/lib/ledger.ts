@@ -132,11 +132,15 @@ export async function saveOpeningBalances(bankRaw: string, cashRaw: string) {
   const openingCash = readRupees(cashRaw, "opening cash");
   await ensureSchema();
   const db = await getDb();
-  await db.collection("settings").updateOne(
-    { _id: "opening" },
-    { $set: { openingBalance, openingCash, updatedAt: new Date() } },
-    { upsert: true },
-  );
+  await db
+    .collection<{ _id: string; openingBalance: number; openingCash: number; updatedAt: Date }>(
+      "settings",
+    )
+    .updateOne(
+      { _id: "opening" },
+      { $set: { openingBalance, openingCash, updatedAt: new Date() } },
+      { upsert: true },
+    );
 }
 
 export async function getEntry(id: number) {
